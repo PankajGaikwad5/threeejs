@@ -1,101 +1,177 @@
-import Image from "next/image";
+'use client';
+import { Canvas } from '@react-three/fiber';
+import { MapControls, OrbitControls } from '@react-three/drei';
+import { useRef, useEffect, useState } from 'react';
+import * as THREE from 'three';
+import { useFrame } from '@react-three/fiber';
+import { moreImages } from './components/ImageData';
+import { GridHelper } from 'three';
+
+function CameraController() {
+  const velocity = 0.5; // Speed of camera movement
+  const direction = new THREE.Vector3(); // Vector to store camera direction
+  const forwardDirection = new THREE.Vector3();
+  const rightDirection = new THREE.Vector3();
+  const isMovingForward = useRef(false);
+  const isMovingBackward = useRef(false); // For backward movement
+  const isMovingRight = useRef(false); // For rightward movement
+  const isMovingLeft = useRef(false); // For leftward movement
+  // const maxDistance = 500;
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'ArrowUp') {
+        isMovingForward.current = true;
+      }
+      if (event.key === 'ArrowDown') {
+        isMovingBackward.current = true;
+      }
+      if (event.key === 'ArrowRight') {
+        isMovingRight.current = true;
+      }
+      if (event.key === 'ArrowLeft') {
+        isMovingLeft.current = true;
+      }
+    };
+
+    const handleKeyUp = (event) => {
+      if (event.key === 'ArrowUp') {
+        isMovingForward.current = false;
+      }
+      if (event.key === 'ArrowDown') {
+        isMovingBackward.current = false;
+      }
+      if (event.key === 'ArrowRight') {
+        isMovingRight.current = false;
+      }
+      if (event.key === 'ArrowLeft') {
+        isMovingLeft.current = false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  useFrame(({ camera }) => {
+    if (isMovingForward.current) {
+      // Get the camera's forward direction
+      camera.getWorldDirection(forwardDirection);
+      forwardDirection.multiplyScalar(velocity);
+
+      // Move the camera forward
+      camera.position.add(forwardDirection);
+    }
+
+    if (isMovingBackward.current) {
+      // Get the camera's forward direction (inverted for backward movement)
+      camera.getWorldDirection(forwardDirection);
+      forwardDirection.multiplyScalar(-velocity);
+
+      // Move the camera backward
+      camera.position.add(forwardDirection);
+    }
+
+    if (isMovingRight.current) {
+      // Get the camera's right direction
+      camera.getWorldDirection(forwardDirection);
+      rightDirection.crossVectors(forwardDirection, camera.up).normalize(); // Calculate right direction
+      rightDirection.multiplyScalar(velocity);
+
+      // Move the camera to the right
+      camera.position.add(rightDirection);
+    }
+
+    if (isMovingLeft.current) {
+      // Get the camera's right direction (inverted for left movement)
+      camera.getWorldDirection(forwardDirection);
+      rightDirection.crossVectors(forwardDirection, camera.up).normalize();
+      rightDirection.multiplyScalar(-velocity);
+
+      // Move the camera to the left
+      camera.position.add(rightDirection);
+    }
+  });
+
+  return null;
+}
+
+function CameraAnimation({ targetPosition, onComplete }) {
+  const [isAnimating, setIsAnimating] = useState(true);
+
+  useFrame(({ camera }) => {
+    if (!isAnimating) return;
+
+    camera.position.lerp(new THREE.Vector3(...targetPosition), 0.02);
+    camera.lookAt(0, 0, 0);
+
+    if (
+      camera.position.distanceTo(new THREE.Vector3(...targetPosition)) < 0.1
+    ) {
+      setIsAnimating(false);
+      onComplete();
+    }
+  });
+  return null;
+}
+
+function FloatingImage({ position, url }) {
+  const meshRef = useRef();
+
+  useFrame(({ camera }) => {
+    if (meshRef.current) {
+      meshRef.current.lookAt(camera.position);
+    }
+  });
+
+  return (
+    <mesh position={position} ref={meshRef}>
+      <planeGeometry args={[3, 2]} />
+      <meshBasicMaterial side={THREE.DoubleSide}>
+        <primitive attach='map' object={new THREE.TextureLoader().load(url)} />
+      </meshBasicMaterial>
+    </mesh>
+  );
+}
 
 export default function Home() {
+  const [animationComplete, setAnimationComplete] = useState(false);
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <main style={{ width: '100vw', height: '100vh', background: 'black' }}>
+      <Canvas
+        camera={{ position: [0, 40, 0], fov: 75 }}
+        style={{ background: 'black' }}
+      >
+        <CameraAnimation
+          targetPosition={[0, 0, 20]}
+          onComplete={() => setAnimationComplete(true)}
         />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+        <ambientLight intensity={0.5} />
+        <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
+        <CameraController />
+        {moreImages.map((url, index) => {
+          // Create a spread of 100 units in each dimension
+          const spread = 40;
+          return (
+            <FloatingImage
+              key={index}
+              url={url}
+              position={[
+                Math.random() * spread - spread / 2, // x between -20 and 20
+                Math.random() * spread - spread / 2, // y between -20 and 20
+                Math.random() * spread - spread / 2, // z between -20 and 20
+              ]}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          );
+        })}
+        {animationComplete && <OrbitControls />}
+        <gridHelper args={[30, 30]} position={[0, 0, 0]} />
+      </Canvas>
+    </main>
   );
 }
