@@ -6,8 +6,10 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { moreImages } from './components/ImageData';
 import { GridHelper } from 'three';
+import { MOUSE, TOUCH } from 'three';
+import { gsap } from 'gsap';
 
-function CameraController() {
+function CameraController({ animationComplete }) {
   const velocity = 0.5; // Speed of camera movement
   const direction = new THREE.Vector3(); // Vector to store camera direction
   const forwardDirection = new THREE.Vector3();
@@ -16,10 +18,11 @@ function CameraController() {
   const isMovingBackward = useRef(false); // For backward movement
   const isMovingRight = useRef(false); // For rightward movement
   const isMovingLeft = useRef(false); // For leftward movement
-  // const maxDistance = 500;
+  const movementSpeed = 0.5;
 
   useEffect(() => {
     const handleKeyDown = (event) => {
+      if (!animationComplete) return; // Disable movement during animation
       if (event.key === 'ArrowUp') {
         isMovingForward.current = true;
       }
@@ -56,46 +59,47 @@ function CameraController() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [animationComplete]);
 
   useFrame(({ camera }) => {
-    if (isMovingForward.current) {
-      // Get the camera's forward direction
-      camera.getWorldDirection(forwardDirection);
-      forwardDirection.multiplyScalar(velocity);
+    if (!animationComplete) return; // Disable movement during animation
 
-      // Move the camera forward
-      camera.position.add(forwardDirection);
+    camera.getWorldDirection(forwardDirection);
+    forwardDirection.y = 0;
+    forwardDirection.normalize();
+
+    // Right direction is the cross product of forward and the camera's up vector
+    rightDirection.crossVectors(forwardDirection, camera.up).normalize();
+    const movement = new THREE.Vector3();
+
+    if (isMovingForward.current) {
+      movement.add(forwardDirection.clone().multiplyScalar(+velocity));
+      console.log(camera.position);
     }
 
     if (isMovingBackward.current) {
-      // Get the camera's forward direction (inverted for backward movement)
-      camera.getWorldDirection(forwardDirection);
-      forwardDirection.multiplyScalar(-velocity);
-
-      // Move the camera backward
-      camera.position.add(forwardDirection);
+      movement.add(forwardDirection.clone().multiplyScalar(-velocity));
+      console.log(camera.position);
     }
 
     if (isMovingRight.current) {
-      // Get the camera's right direction
-      camera.getWorldDirection(forwardDirection);
-      rightDirection.crossVectors(forwardDirection, camera.up).normalize(); // Calculate right direction
-      rightDirection.multiplyScalar(velocity);
-
-      // Move the camera to the right
-      camera.position.add(rightDirection);
+      movement.add(rightDirection.clone().multiplyScalar(velocity));
     }
 
     if (isMovingLeft.current) {
-      // Get the camera's right direction (inverted for left movement)
-      camera.getWorldDirection(forwardDirection);
-      rightDirection.crossVectors(forwardDirection, camera.up).normalize();
-      rightDirection.multiplyScalar(-velocity);
-
-      // Move the camera to the left
-      camera.position.add(rightDirection);
+      movement.add(rightDirection.clone().multiplyScalar(-velocity));
     }
+
+    camera.position.add(movement);
+
+    camera.position.x -= 0.01;
+
+    // Prevent camera from moving too far in the X-axis
+    camera.position.set(
+      Math.round(camera.position.x * 1000) / 1000,
+      Math.round(camera.position.y * 1000) / 1000,
+      Math.round(camera.position.z * 1000) / 1000
+    );
   });
 
   return null;
@@ -116,6 +120,7 @@ function CameraAnimation({ targetPosition, onComplete }) {
       setIsAnimating(false);
       onComplete();
     }
+    // console.log('Camera position:', camera.position);
   });
   return null;
 }
@@ -128,10 +133,13 @@ function FloatingImage({ position, url }) {
       meshRef.current.lookAt(camera.position);
     }
   });
+  const handleClick = ({ camera }) => {
+    console.log('Mesh position:', meshRef.current.position);
+  };
 
   return (
-    <mesh position={position} ref={meshRef}>
-      <planeGeometry args={[3, 2]} />
+    <mesh position={position} ref={meshRef} onClick={handleClick}>
+      <planeGeometry args={[9, 6]} />
       <meshBasicMaterial side={THREE.DoubleSide}>
         <primitive attach='map' object={new THREE.TextureLoader().load(url)} />
       </meshBasicMaterial>
@@ -141,11 +149,18 @@ function FloatingImage({ position, url }) {
 
 export default function Home() {
   const [animationComplete, setAnimationComplete] = useState(false);
+  const cameraRef = useRef();
   return (
-    <main style={{ width: '100vw', height: '100vh', background: 'black' }}>
+    <main style={{ width: '100vw', height: '100vh' }}>
       <Canvas
         camera={{ position: [0, 40, 0], fov: 75 }}
-        style={{ background: 'black' }}
+        style={{
+          background:
+            'radial-gradient(circle, rgba(138,138,138,1) 26%, rgba(164,164,164,1) 45%, rgba(115,145,150,1) 68%, rgba(164,164,164,1) 100%, rgba(210,210,210,1) 100%)',
+        }}
+        onCreated={({ camera }) => {
+          cameraRef.current = camera;
+        }}
       >
         <CameraAnimation
           targetPosition={[0, 0, 20]}
@@ -153,10 +168,10 @@ export default function Home() {
         />
         <ambientLight intensity={0.5} />
         <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
-        <CameraController />
+        <CameraController animationComplete={animationComplete} />
         {moreImages.map((url, index) => {
           // Create a spread of 100 units in each dimension
-          const spread = 40;
+          const spread = 150;
           return (
             <FloatingImage
               key={index}
@@ -169,8 +184,9 @@ export default function Home() {
             />
           );
         })}
-        {animationComplete && <OrbitControls />}
-        <gridHelper args={[30, 30]} position={[0, 0, 0]} />
+        {/* {animationComplete && <OrbitControls />} */}
+        <MapControls touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }} />
+        {/* <gridHelper args={[30, 30]} position={[0, 0, 0]} /> */}
       </Canvas>
     </main>
   );
