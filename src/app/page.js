@@ -1,25 +1,34 @@
 'use client';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useLoader, useFrame } from '@react-three/fiber';
 import { MapControls, OrbitControls } from '@react-three/drei';
 import { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
 import { moreImages } from './components/ImageData';
-import { GridHelper } from 'three';
-import { MOUSE, TOUCH } from 'three';
-import { gsap } from 'gsap';
+import { MOUSE, TOUCH, TextureLoader } from 'three';
+import {
+  getRandomPosition,
+  isTooClose,
+  generatePositions,
+} from './components/ImagePositions';
+import { RxCross1 } from 'react-icons/rx';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import CameraAnimation from './components/CameraAnimation';
+import FloatingImage from './components/FloatingImage';
+import Modal from './components/Modal';
+import './styles.css';
+import { imageData } from './components/ImageData';
 
 function CameraController({ animationComplete }) {
   const velocity = 0.5; // Speed of camera movement
-  const direction = new THREE.Vector3(); // Vector to store camera direction
   const forwardDirection = new THREE.Vector3();
   const rightDirection = new THREE.Vector3();
   const isMovingForward = useRef(false);
-  const isMovingBackward = useRef(false); // For backward movement
-  const isMovingRight = useRef(false); // For rightward movement
-  const isMovingLeft = useRef(false); // For leftward movement
-  const movementSpeed = 0.5;
+  const isMovingBackward = useRef(false);
+  const isMovingRight = useRef(false);
+  const isMovingLeft = useRef(false);
 
+  // Handle keyboard events to set movement directions
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (!animationComplete) return; // Disable movement during animation
@@ -61,95 +70,87 @@ function CameraController({ animationComplete }) {
     };
   }, [animationComplete]);
 
+  // Update the camera position every frame
   useFrame(({ camera }) => {
-    if (!animationComplete) return; // Disable movement during animation
+    if (!animationComplete) return;
 
+    // Calculate forward and right directions relative to the camera
     camera.getWorldDirection(forwardDirection);
-    forwardDirection.y = 0;
-    forwardDirection.normalize();
+    forwardDirection.y = 0; // Keep movement on the XZ plane
+    forwardDirection.normalize(); // Normalize the forward vector
 
-    // Right direction is the cross product of forward and the camera's up vector
+    // Calculate right direction (perpendicular to forward)
     rightDirection.crossVectors(forwardDirection, camera.up).normalize();
+
     const movement = new THREE.Vector3();
-
     if (isMovingForward.current) {
-      movement.add(forwardDirection.clone().multiplyScalar(+velocity));
-      console.log(camera.position);
+      movement.z = -velocity; // Move forward
+      // movement.add(forwardDirection.clone().multiplyScalar(velocity));
+      // console.log(forwardDirection);
     }
-
     if (isMovingBackward.current) {
-      movement.add(forwardDirection.clone().multiplyScalar(-velocity));
-      console.log(camera.position);
+      movement.z = velocity; // Move backward
     }
-
     if (isMovingRight.current) {
       movement.add(rightDirection.clone().multiplyScalar(velocity));
     }
-
     if (isMovingLeft.current) {
       movement.add(rightDirection.clone().multiplyScalar(-velocity));
     }
 
+    // Update the camera's position
     camera.position.add(movement);
-
-    camera.position.x -= 0.01;
-
-    // Prevent camera from moving too far in the X-axis
-    camera.position.set(
-      Math.round(camera.position.x * 1000) / 1000,
-      Math.round(camera.position.y * 1000) / 1000,
-      Math.round(camera.position.z * 1000) / 1000
-    );
   });
 
   return null;
 }
 
-function CameraAnimation({ targetPosition, onComplete }) {
-  const [isAnimating, setIsAnimating] = useState(true);
-
-  useFrame(({ camera }) => {
-    if (!isAnimating) return;
-
-    camera.position.lerp(new THREE.Vector3(...targetPosition), 0.02);
-    camera.lookAt(0, 0, 0);
-
-    if (
-      camera.position.distanceTo(new THREE.Vector3(...targetPosition)) < 0.1
-    ) {
-      setIsAnimating(false);
-      onComplete();
-    }
-    // console.log('Camera position:', camera.position);
+const loader = new FontLoader();
+loader.load('', function (font) {
+  const textGeometry = new TextGeometry('Hello World', {
+    font: font,
+    size: 1,
+    height: 0.2,
   });
-  return null;
-}
-
-function FloatingImage({ position, url }) {
-  const meshRef = useRef();
-
-  useFrame(({ camera }) => {
-    if (meshRef.current) {
-      meshRef.current.lookAt(camera.position);
-    }
-  });
-  const handleClick = ({ camera }) => {
-    console.log('Mesh position:', meshRef.current.position);
-  };
-
-  return (
-    <mesh position={position} ref={meshRef} onClick={handleClick}>
-      <planeGeometry args={[9, 6]} />
-      <meshBasicMaterial side={THREE.DoubleSide}>
-        <primitive attach='map' object={new THREE.TextureLoader().load(url)} />
-      </meshBasicMaterial>
-    </mesh>
-  );
-}
+  const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+  textMesh.position.set(0, 0, 0); // Adjust position as needed
+  scene.add(textMesh);
+});
 
 export default function Home() {
   const [animationComplete, setAnimationComplete] = useState(false);
   const cameraRef = useRef();
+  const positions = generatePositions(moreImages.length, 20, 100, 10);
+  const moonTexture = useLoader(TextureLoader, '/assets/moon.jpg');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+
+  const handleImageClick = (image) => {
+    setSelectedImage(image);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedImage(null);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        handleCloseModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+  const texture = useLoader(THREE.TextureLoader, './assets/space.jpg');
+
   return (
     <main style={{ width: '100vw', height: '100vh' }}>
       <Canvas
@@ -162,6 +163,7 @@ export default function Home() {
           cameraRef.current = camera;
         }}
       >
+        <primitive attach='background' object={texture} />
         <CameraAnimation
           targetPosition={[0, 0, 20]}
           onComplete={() => setAnimationComplete(true)}
@@ -169,25 +171,57 @@ export default function Home() {
         <ambientLight intensity={0.5} />
         <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
         <CameraController animationComplete={animationComplete} />
-        {moreImages.map((url, index) => {
-          // Create a spread of 100 units in each dimension
+        {imageData.map((data, index) => {
           const spread = 150;
           return (
             <FloatingImage
-              key={index}
-              url={url}
-              position={[
-                Math.random() * spread - spread / 2, // x between -20 and 20
-                Math.random() * spread - spread / 2, // y between -20 and 20
-                Math.random() * spread - spread / 2, // z between -20 and 20
-              ]}
+              key={data.id}
+              url={data.img}
+              position={positions[index]}
+              onClick={() => handleImageClick(data)}
             />
           );
         })}
-        {/* {animationComplete && <OrbitControls />} */}
-        <MapControls touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }} />
-        {/* <gridHelper args={[30, 30]} position={[0, 0, 0]} /> */}
+        {animationComplete && (
+          <MapControls
+            position={(0, 0, 20)}
+            touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }}
+            mouseButtons={{
+              LEFT: THREE.MOUSE.PAN,
+              MIDDLE: THREE.MOUSE.DOLLY,
+              RIGHT: THREE.MOUSE.ROTATE,
+            }}
+          />
+        )}
       </Canvas>
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
+        <button
+          className='close-button absolute top-3 right-3 z-10 bg-white border-none px-4 py-2 cursor-pointer'
+          onClick={handleCloseModal}
+        >
+          <RxCross1 size={30} className='cross-icon' />
+        </button>
+        {selectedImage && (
+          <div className='modal-content'>
+            <img
+              src={selectedImage.img}
+              className='modal-image'
+              alt='Selected'
+            />
+            <div className='modal-images'>
+              {selectedImage.images.map((img, idx) => (
+                <img
+                  key={idx}
+                  src={img}
+                  className='modal-image'
+                  alt={`Related ${idx}`}
+                />
+              ))}
+            </div>
+            <p>{selectedImage.details}</p>
+          </div>
+        )}
+      </Modal>
     </main>
   );
 }
