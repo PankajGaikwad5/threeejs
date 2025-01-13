@@ -2,7 +2,7 @@
 export function getRandomPosition({
   radiusMin,
   radiusMax,
-  heightRange = 60,
+  heightRange = 100,
   heightCenter = 0,
 }) {
   const angle = Math.random() * Math.PI * 2; // Random angle in radians
@@ -32,7 +32,7 @@ export function generatePositions(
   radiusMin,
   radiusMax,
   minDistance,
-  heightRange = 60
+  heightRange = 100
 ) {
   const positions = [];
   let attempts = 0; // Track attempts

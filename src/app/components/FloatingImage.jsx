@@ -19,7 +19,7 @@ export default function FloatingImage({ position, url, onClick }) {
       ref={meshRef}
       onClick={onClick}
     >
-      <planeGeometry args={[9, 6]} />
+      <planeGeometry args={[20, 14]} />
       <meshBasicMaterial side={THREE.DoubleSide}>
         <primitive attach='map' object={new THREE.TextureLoader().load(url)} />
       </meshBasicMaterial>

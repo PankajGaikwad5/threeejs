@@ -1,7 +1,7 @@
 'use client';
 import { Canvas, useLoader, useFrame } from '@react-three/fiber';
 import { MapControls, OrbitControls } from '@react-three/drei';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { moreImages } from './components/ImageData';
 import { MOUSE, TOUCH, TextureLoader } from 'three';
@@ -19,8 +19,14 @@ import Modal from './components/Modal';
 import './styles.css';
 import { imageData } from './components/ImageData';
 
-function CameraController({ animationComplete }) {
-  const velocity = 0.5; // Speed of camera movement
+function CameraController({
+  animationComplete,
+  cameraTarget,
+  onTargetReached,
+}) {
+  const velocity = 0.5;
+  const zoomVelocity = 2;
+  const stoppingDistance = 5;
   const forwardDirection = new THREE.Vector3();
   const rightDirection = new THREE.Vector3();
   const isMovingForward = useRef(false);
@@ -68,25 +74,40 @@ function CameraController({ animationComplete }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [animationComplete]);
+  }, [animationComplete, cameraTarget]);
 
   // Update the camera position every frame
   useFrame(({ camera }) => {
     if (!animationComplete) return;
 
+    if (cameraTarget) {
+      const currentPosition = new THREE.Vector3().copy(camera.position);
+      const targetPosition = new THREE.Vector3(...cameraTarget);
+
+      const direction = targetPosition.clone().sub(currentPosition).normalize();
+      const distance = currentPosition.distanceTo(targetPosition);
+
+      if (distance > 0.5) {
+        const step = direction.multiplyScalar(zoomVelocity * 0.5);
+        camera.position.add(step);
+        camera.lookAt(targetPosition);
+      } else {
+        camera.position.set(...cameraTarget); // Snap to exact position
+        camera.lookAt(targetPosition);
+        onTargetReached(); // Trigger the modal
+      }
+      return;
+    }
+
     // Calculate forward and right directions relative to the camera
     camera.getWorldDirection(forwardDirection);
-    forwardDirection.y = 0; // Keep movement on the XZ plane
-    forwardDirection.normalize(); // Normalize the forward vector
-
-    // Calculate right direction (perpendicular to forward)
+    forwardDirection.y = 0;
+    forwardDirection.normalize();
     rightDirection.crossVectors(forwardDirection, camera.up).normalize();
 
     const movement = new THREE.Vector3();
     if (isMovingForward.current) {
-      movement.z = -velocity; // Move forward
-      // movement.add(forwardDirection.clone().multiplyScalar(velocity));
-      // console.log(forwardDirection);
+      movement.z = -velocity;
     }
     if (isMovingBackward.current) {
       movement.z = velocity; // Move backward
@@ -105,30 +126,48 @@ function CameraController({ animationComplete }) {
   return null;
 }
 
-const loader = new FontLoader();
-loader.load('', function (font) {
-  const textGeometry = new TextGeometry('Hello World', {
-    font: font,
-    size: 1,
-    height: 0.2,
-  });
-  const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-  textMesh.position.set(0, 0, 0); // Adjust position as needed
-  scene.add(textMesh);
-});
-
 export default function Home() {
   const [animationComplete, setAnimationComplete] = useState(false);
   const cameraRef = useRef();
   const positions = generatePositions(moreImages.length, 20, 100, 10);
+  const positionsRef = useRef(
+    // generatePositions(moreImages.length, 20, 100, 10)
+    useMemo(() => generatePositions(moreImages.length, 20, 100, 10), [])
+  );
   const moonTexture = useLoader(TextureLoader, '/assets/moon.jpg');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [cameraTarget, setCameraTarget] = useState(null);
+  const [topics, setTopics] = useState([]);
 
-  const handleImageClick = (image) => {
+  useEffect(() => {
+    // Fetch topics from the API
+    const fetchTopics = async () => {
+      try {
+        const response = await fetch('/api/topics');
+        const data = await response.json();
+        console.log(data);
+
+        setTopics(data.topics);
+        console.log(topics);
+      } catch (error) {
+        console.error('Error fetching topics:', error);
+      }
+    };
+
+    fetchTopics();
+  }, []);
+
+  const handleImageClick = (image, position) => {
     setSelectedImage(image);
+    setCameraTarget(position);
+    setIsModalOpen(false);
+    // setIsModalOpen(true);
+  };
+
+  const handleTargetReached = () => {
     setIsModalOpen(true);
+    setCameraTarget(null);
   };
 
   const handleCloseModal = () => {
@@ -151,74 +190,113 @@ export default function Home() {
   }, []);
   const texture = useLoader(THREE.TextureLoader, './assets/space.jpg');
 
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const handleCarouselNavigation = (direction) => {
+    if (!selectedImage) return;
+
+    if (direction === 'prev') {
+      setCurrentImageIndex((prevIndex) =>
+        prevIndex === 0 ? selectedImage.images.length - 1 : prevIndex - 1
+      );
+    } else if (direction === 'next') {
+      setCurrentImageIndex((prevIndex) =>
+        prevIndex === selectedImage.images.length - 1 ? 0 : prevIndex + 1
+      );
+    }
+  };
+
   return (
     <main style={{ width: '100vw', height: '100vh' }}>
       <Canvas
         camera={{ position: [0, 40, 0], fov: 75 }}
-        style={{
-          background:
-            'radial-gradient(circle, rgba(138,138,138,1) 26%, rgba(164,164,164,1) 45%, rgba(115,145,150,1) 68%, rgba(164,164,164,1) 100%, rgba(210,210,210,1) 100%)',
-        }}
         onCreated={({ camera }) => {
           cameraRef.current = camera;
         }}
       >
-        <primitive attach='background' object={texture} />
+        {/* <primitive attach='background' object={texture} /> */}
         <CameraAnimation
           targetPosition={[0, 0, 20]}
           onComplete={() => setAnimationComplete(true)}
         />
         <ambientLight intensity={0.5} />
         <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
-        <CameraController animationComplete={animationComplete} />
-        {imageData.map((data, index) => {
-          const spread = 150;
+        <CameraController
+          animationComplete={animationComplete}
+          cameraTarget={cameraTarget}
+          onTargetReached={handleTargetReached}
+          onTargetReached={() => {
+            setIsModalOpen(true);
+            setCameraTarget(null);
+          }}
+        />
+        {topics.map((data, index) => {
           return (
             <FloatingImage
-              key={data.id}
-              url={data.img}
-              position={positions[index]}
-              onClick={() => handleImageClick(data)}
+              key={data._id}
+              url={data.images[0]}
+              position={positionsRef.current[index]}
+              onClick={() =>
+                handleImageClick(data, positionsRef.current[index])
+              }
             />
           );
         })}
-        {animationComplete && (
-          <MapControls
-            position={(0, 0, 20)}
-            touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }}
-            mouseButtons={{
-              LEFT: THREE.MOUSE.PAN,
-              MIDDLE: THREE.MOUSE.DOLLY,
-              RIGHT: THREE.MOUSE.ROTATE,
-            }}
-          />
-        )}
+        {/* {animationComplete && ( */}
+        <MapControls
+          position={(0, 0, 20)}
+          touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }}
+          mouseButtons={{
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE,
+          }}
+        />
+        {/* )} */}
       </Canvas>
       <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
         <button
-          className='close-button absolute top-3 right-3 z-10 bg-white border-none px-4 py-2 cursor-pointer'
+          className='close-button absolute top-3 right-3 z-10 bg-white rounded-full p-2 shadow cursor-pointer'
           onClick={handleCloseModal}
         >
-          <RxCross1 size={30} className='cross-icon' />
+          <RxCross1 size={24} className='cross-icon' />
         </button>
         {selectedImage && (
           <div className='modal-content'>
-            <img
-              src={selectedImage.img}
-              className='modal-image'
-              alt='Selected'
-            />
-            <div className='modal-images'>
+            <h2>{selectedImage.title}</h2>
+            <div className='carousel'>
+              <button
+                className='carousel-button left'
+                onClick={() => handleCarouselNavigation('prev')}
+              >
+                ◀
+              </button>
+              <img
+                src={selectedImage.images[currentImageIndex]} // Current image in carousel
+                className='main-carousel-image'
+                alt={`Selected ${currentImageIndex}`}
+              />
+              <button
+                className='carousel-button right'
+                onClick={() => handleCarouselNavigation('next')}
+              >
+                ▶
+              </button>
+            </div>
+            <div className='thumbnail-container'>
               {selectedImage.images.map((img, idx) => (
                 <img
                   key={idx}
                   src={img}
-                  className='modal-image'
-                  alt={`Related ${idx}`}
+                  className={`thumbnail-image ${
+                    currentImageIndex === idx ? 'active-thumbnail' : ''
+                  }`}
+                  onClick={() => setCurrentImageIndex(idx)} // Set current image
+                  alt={`Thumbnail ${idx}`}
                 />
               ))}
             </div>
-            <p>{selectedImage.details}</p>
+            <p>{selectedImage.description}</p>
           </div>
         )}
       </Modal>
